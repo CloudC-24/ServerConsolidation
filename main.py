@@ -1,6 +1,6 @@
 from utils.connect import connect_hypervisor
 from utils.migration import migrate_vm
-from algorithms.dfd import bfd_server_consolidation
+from algorithms.bfd import bfd_server_consolidation
 
 if __name__ == "__main__":
     hypervisor_uris = [
