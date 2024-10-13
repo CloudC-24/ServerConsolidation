@@ -1,28 +1,22 @@
-import libvirt
+from utils.connect import connect_hypervisor
+from utils.migration import migrate_vm
+from algorithms.bfd import bfd_server_consolidation
 
-host_ips = [
-    "qemu:///system",
-    "qemu+ssh://yogi@192.168.239.103/system",
-]      
+if __name__ == "__main__":
+    hypervisor_uris = [
+        "qemu:///system",
+        "qemu+ssh://sushant@192.168.56.38/system"
+    ]
 
-def connect_to_hypervisor(ip):
-    try:
-        conn = libvirt.open(ip)
-        
-        if conn is None:
-            print('Failed to open connection to qemu+ssh://user@192.168.239.185/system')
-            return None
-        
-        print(f'Successfully connected to {ip} the QEMU hypervisor')
-        return conn
-    except libvirt.libvirtError as e:
-        print(f'Failed to connect to the hypervisor: {e}')
-        return None
+    source_conns = [connect_hypervisor(uri) for uri in hypervisor_uris]
 
-for ip in host_ips:
-    hypervisor_connection = connect_to_hypervisor(ip)
-    print("Listing the running VM's in the associated hypervisor")
-    if hypervisor_connection:
-        for vm_id in hypervisor_connection.listDomainsID():
-            vm = hypervisor_connection.lookupByID(vm_id)
-            print(f'Running VM: {vm.name()}')
+    vm_list = source_conns[0].listAllDomains()
+
+    migration_plan = bfd_server_consolidation(source_conns, vm_list)
+
+    for vm, target_conn in migration_plan.items():
+        print(f"Migrating {vm.name()} to {target_conn.getHostname()}")
+        migrate_vm(source_conns[0], target_conn, vm.name())
+
+    for conn in source_conns:
+        conn.close()
