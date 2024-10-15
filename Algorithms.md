@@ -15,3 +15,13 @@
     - May not always produce the optimal solution.
     - Can lead to fragmentation of resources, especially if VMs are not sorted optimally.
 
+## Ant Colony System Algorithm (ACS)
+
+* The main reason of selecting the ACS algorithm for our research is that our main
+problem i.e the Virtual Machine Placement problem is a NP-hard problem as well
+as a Combinatorial Optimization Problem (COP) which means that this problem
+has a finite set of solutions but in order to choose the best solution we need an EC
+Algorithm. An EC algorithm is an evolutionary computation algorithm that helps
+to improve the resource utilization and reduce energy consumption of our VMP
+problem. Out of all EC algorithms, the Ant Colony System algorithm addresses the
+problem more eﬃciently with strong logical inference.
