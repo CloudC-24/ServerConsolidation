@@ -1,7 +1,7 @@
 import random
 import numpy as np
 
-class ACS:
+class ACO:
     def __init__(self, num_ants, num_iterations, alpha, beta, rho, q0):
         self.num_ants = num_ants
         self.num_iterations = num_iterations
@@ -76,13 +76,13 @@ class ACS:
         total_power = sum(s.power_consumption() for s in servers)
         return total_wastage + total_power
 
-def acs_server_consolidation(source_conns, all_vms):
+def aco_server_consolidation(source_conns, all_vms):
     # Convert libvirt objects to simple VM and Server classes
     vms = [VM(vm.name(), vm.info()[3], vm.info()[2]) for conn in source_conns for vm in all_vms[conn]]
     servers = [Server(conn.getHostname(), conn.getCPUStats(total=True)['cpu_time'], conn.getMemoryStats(total=True)['total']) for conn in source_conns]
 
-    acs = ACS(num_ants=10, num_iterations=100, alpha=1, beta=2, rho=0.1, q0=0.9)
-    best_solution = acs.solve(vms, servers)
+    aco = ACO(num_ants=10, num_iterations=100, alpha=1, beta=2, rho=0.1, q0=0.9)
+    best_solution = aco.solve(vms, servers)
 
     # Convert the solution back to the expected format
     migration_plan = {}
