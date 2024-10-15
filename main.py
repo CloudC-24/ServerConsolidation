@@ -5,7 +5,7 @@ from algorithms.bfd import bfd_server_consolidation
 if __name__ == "__main__":
     hypervisor_uris = [
         "qemu:///system",
-        "qemu+ssh://yogi@[2402:e280:217b:338:1ef6:4461:a182:d39e]/system"
+        "qemu+ssh://yogi@192.168.248.103/system"
     ]
      
     source_conns = [connect_hypervisor(uri) for uri in hypervisor_uris]
@@ -16,11 +16,14 @@ if __name__ == "__main__":
         vm_list = conn.listAllDomains()
         all_vms[conn] = vm_list
 
-    migration_plan = bfd_server_consolidation(source_conns, all_vms)
+    migrate_vm(source_conn=source_conns[0],dest_conn=source_conns[1],vm_name="parth@linux2022")
+    
+    # migration_plan = bfd_server_consolidation(source_conns, all_vms)
 
-    for vm, target_conn in migration_plan.items():
-        print(f"Migrating {vm.name()} to {target_conn.getHostname()}")
-        migrate_vm(source_conns[0], target_conn, vm.name())
+
+    # for vm, target_conn in migration_plan.items():
+    #     print(f"Migrating {vm.name()} to {target_conn.getHostname()}")
+    #     migrate_vm(source_conns[0], target_conn, vm.name())
 
     for conn in source_conns:
         conn.close()
