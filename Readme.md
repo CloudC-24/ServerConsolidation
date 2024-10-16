@@ -1,3 +1,10 @@
+# Resource :
+- https://claude.ai/chat/9564ce11-479f-4d2c-8724-97d84429050b (cloud AI)
+- https://github.com/vmware/pyvmomi (pyvmomi)
+- https://github.com/vmware/vsphere-automation-sdk-python (vsphere-automation-sdk-python)
+
+
+
 # Cloud Computing Project
 
 This project aims to implement six algorithms for the virtual machine placement problem in cloud computing. The algorithms are as follows:
