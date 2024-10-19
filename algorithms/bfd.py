@@ -5,13 +5,18 @@ def bfd_server_consolidation(source_conns, all_vms):
     migration_plan = {}
     
     vm_list = [(vm, conn) for conn, vms in all_vms.items() for vm in vms]
-    
+    # print("list ",vm_list)
+    print(get_vm_resource_usage(vm_list[0][0]))
+    print(get_vm_resource_usage(vm_list[1][0]))
+    print(get_vm_resource_usage(vm_list[2][0]))
     vm_list.sort(key=lambda x: get_vm_resource_usage(x[0])['cpu'], reverse=True)
 
     hypervisor_resources = {
         conn: get_hypervisor_resource_usage(conn) for conn in source_conns
     }
     
+    print(hypervisor_resources)
+
     source_conns.sort(key=lambda conn: hypervisor_resources[conn]['cpu'], reverse=True)
     
     target_conn = source_conns[0]
@@ -38,6 +43,6 @@ def bfd_server_consolidation(source_conns, all_vms):
 
 def can_fit_vm_on_hypervisor(vm_usage, hypervisor_avail):
     return (
-        hypervisor_avail['cpu'] >= vm_usage['cpu'] and
+        # hypervisor_avail['cpu'] >= vm_usage['cpu'] and/
         hypervisor_avail['memory'] >= vm_usage['memory']
     )
