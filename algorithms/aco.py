@@ -1,5 +1,7 @@
 import random
 import numpy as np
+from utils.get_vm_resource_usage import get_vm_resource_usage
+from utils.get_hypervisor_resource_usage import get_hypervisor_resource_usage
 
 class ACO:
     def __init__(self, num_ants, num_iterations, alpha, beta, rho, q0):
