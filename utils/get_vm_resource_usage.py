@@ -1,5 +1,5 @@
 import time
-def get_vm_resource_usage(vm):
+def get_vm_resource_usage(vm,interval=1):
     memory_stats = vm.memoryStats()
     memory_usage = memory_stats.get('rss', 0)  
 
@@ -12,7 +12,7 @@ def get_vm_resource_usage(vm):
     cpu_time_1 = vm.info()[4]
 
     # Wait for the interval (e.g., 1 second)
-    time.sleep(1)
+    time.sleep(interval)
 
     # Get the CPU time after the interval
     cpu_time_2 = vm.info()[4]

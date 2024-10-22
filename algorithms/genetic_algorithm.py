@@ -1,46 +1,134 @@
 import random
-from utils import get_vm_resource_usage, get_hypervisor_resource_usage
+import logging
+from utils.get_vm_resource_usage import get_vm_resource_usage
+from utils.get_hypervisor_resource_usage import get_hypervisor_resource_usage
+from utils.selection import selection
+from utils.crossover import crossover
+from utils.mutate import mutate
+# Configure logging with shorter format
+logging.basicConfig(level=logging.INFO, format='%(asctime)s.%(msecs)03d - %(message)s', datefmt='%H:%M:%S')
+logger = logging.getLogger(__name__)
 
-def genetic_algorithm_server_consolidation(source_conns, all_vms, population_size=50, generations=100, mutation_rate=0.1, elite_size=2):
+def genetic_algorithm_server_consolidation(source_conns, all_vms, population_size=10, generations=10, mutation_rate=0.1, elite_size=2):
+    logger.info(f"Start: {len(all_vms)} VM groups, {len(source_conns)} servers")
+    logger.info(f"Config: pop={population_size}, gen={generations}, mut={mutation_rate}, elite={elite_size}")
+    
     vm_list = [vm for vms in all_vms.values() for vm in vms]
+    print(vm_list)
+    logger.info(f"Total VMs: {len(vm_list)}")
+    
+    # Log initial server states
+    logger.info("Initial server resources:")
+    for conn in source_conns:
+        resources = get_hypervisor_resource_usage(conn,0)
+        logger.info(f"Server {conn}: {resources}")
     
     population = [list(range(len(vm_list))) for _ in range(population_size)]
+
+
     for chromosome in population:
         random.shuffle(chromosome)
-    
+
+    best_fitness = float('-inf')
+    gens_no_improvement = 0
+
     for generation in range(generations):
-        fitness_scores = [fitness(chromosome, source_conns, vm_list) for chromosome in population]
+        logger.info(f"Processing generation {generation}")
+        fitness_scores = []
+        for chromosome in population:
+            try:
+                score = fitness(chromosome, source_conns, vm_list)
+                fitness_scores.append(score)
+            except Exception as e:
+                logger.error(f"Error calculating fitness: {e}")
+                fitness_scores.append(float('-inf'))
         
+        current_best_fitness = max(fitness_scores)
+        
+        if current_best_fitness > best_fitness:
+            best_fitness = current_best_fitness
+            gens_no_improvement = 0
+            logger.info(f"Gen {generation}: New best={best_fitness:.4f}")
+        else:
+            gens_no_improvement += 1
+            
+        if generation % 10 == 0:
+            avg_fitness = sum(fitness_scores) / len(fitness_scores)
+            logger.info(f"Gen {generation}: Avg={avg_fitness:.4f} Best={current_best_fitness:.4f}")
+        
+        # Break if no improvement for many generations
+        if gens_no_improvement > 3:
+            logger.info("Stopping early due to no improvement")
+            break
+            
         elite = sorted(zip(fitness_scores, population), key=lambda x: x[0], reverse=True)[:elite_size]
         elite_fitness, elite_chromosomes = zip(*elite)
         
+        # Write Roullete wheel for this 
         selected = selection(population, fitness_scores)
-        
-        new_population = list(elite_chromosomes) 
+
+        new_population = list(elite_chromosomes)
         while len(new_population) < population_size:
             parent1, parent2 = random.sample(selected, 2)
             child1, child2 = crossover(parent1, parent2)
             new_population.extend([child1, child2])
-        new_population = new_population[:population_size] 
+        new_population = new_population[:population_size]
         
-        for chromosome in new_population[elite_size:]: 
+        mutations = 0
+        for chromosome in new_population[elite_size:]:
             if random.random() < mutation_rate:
-                mutate(chromosome)
+                chromosome = mutate(chromosome)
+                mutations += 1
         
         population = new_population
     
+    logger.info("Finding best solution...")
     best_chromosome = max(population, key=lambda x: fitness(x, source_conns, vm_list))
     
+    # Create migration plan
     migration_plan = {}
+    server_loads = {conn: {'cpu': 0, 'memory': 0} for conn in source_conns}
+    
+    logger.info("Creating migration plan...")
     for i, vm_index in enumerate(best_chromosome):
         vm = vm_list[vm_index]
-        target_conn = ffd_allocate(vm, source_conns)
+        target_conn = ffd_allocate(vm, source_conns, server_loads)
         migration_plan[vm] = target_conn
+        
+        vm_usage = get_vm_resource_usage(vm,0)
+        server_loads[target_conn]['cpu'] += vm_usage['cpu']
+        server_loads[target_conn]['memory'] += vm_usage['memory']
+    
+    # Log final stats
+    used_servers = sum(1 for conn in server_loads if any(v > 0 for v in server_loads[conn].values()))
+    logger.info(f"\nFinal: Using {used_servers}/{len(source_conns)} servers")
+    
+    for conn, loads in server_loads.items():
+        logger.info(f"Server {conn}: CPU={loads['cpu']:.1f}%, Mem={loads['memory']:.1f}%")
     
     return migration_plan
 
-def fitness(chromosome, source_conns, vm_list):
+def ffd_allocate(vm, source_conns, server_loads):
+    vm_usage = get_vm_resource_usage(vm,0)
+    logger.info(f"Allocating VM with usage: CPU={vm_usage['cpu']}%, Memory={vm_usage['memory']}")
+    
+    for conn in sorted(source_conns, key=lambda c: (-server_loads[c]['cpu'], -server_loads[c]['memory'])):
+        try:
+            hypervisor_avail = get_hypervisor_resource_usage(conn,0)
+            available_cpu = hypervisor_avail['cpu']
+            available_memory = hypervisor_avail['memory']
+            
+            if available_cpu >= vm_usage['cpu'] and available_memory >= vm_usage['memory']:
+                logger.info(f"Found suitable server {conn}")
+                return conn
+        except Exception as e:
+            logger.error(f"Error checking server {conn}: {e}")
+    
+    # If no server has enough resources, return the least loaded server
+    logger.warning("No server has ideal resources, selecting least loaded server")
+    return min(source_conns, key=lambda c: server_loads[c]['cpu'] + server_loads[c]['memory'])
 
+def fitness(chromosome, source_conns, vm_list):
     allocated_conns = []
     server_loads = {conn: {'cpu': 0, 'memory': 0} for conn in source_conns}
     
@@ -48,11 +136,11 @@ def fitness(chromosome, source_conns, vm_list):
         vm = vm_list[vm_index]
         conn = ffd_allocate(vm, source_conns, server_loads)
         allocated_conns.append(conn)
-
-        vm_usage = get_vm_resource_usage(vm)
+        
+        vm_usage = get_vm_resource_usage(vm,0)
         server_loads[conn]['cpu'] += vm_usage['cpu']
         server_loads[conn]['memory'] += vm_usage['memory']
-
+    
     unique_conns = len(set(allocated_conns))
     
     cpu_loads = [load['cpu'] for load in server_loads.values() if load['cpu'] > 0]
@@ -61,43 +149,4 @@ def fitness(chromosome, source_conns, vm_list):
     memory_balance = max(memory_loads) - min(memory_loads) if memory_loads else 0
     balance_factor = cpu_balance + memory_balance
     
-    return 1 / (unique_conns + balance_factor * 0.1) 
-
-def ffd_allocate(vm, source_conns, server_loads):
-    vm_usage = get_vm_resource_usage(vm)
-    for conn in sorted(source_conns, key=lambda c: (-server_loads[c]['cpu'], -server_loads[c]['memory'])):
-        hypervisor_avail = get_hypervisor_resource_usage(conn)
-        if hypervisor_avail['cpu'] >= vm_usage['cpu'] and hypervisor_avail['memory'] >= vm_usage['memory']:
-            return conn
-    return min(source_conns, key=lambda c: server_loads[c]['cpu'] + server_loads[c]['memory'])
-
-def selection(population, fitness_scores):
-    tournament_size = 3
-    selected = []
-    for _ in range(len(population)):
-        tournament = random.sample(list(enumerate(fitness_scores)), tournament_size)
-        winner = max(tournament, key=lambda x: x[1])[0]
-        selected.append(population[winner])
-    return selected
-
-def crossover(parent1, parent2):
-    crossover_point1 = random.randint(0, len(parent1) - 2)
-    crossover_point2 = random.randint(crossover_point1 + 1, len(parent1) - 1)
-    
-    child1 = parent1[crossover_point1:crossover_point2]
-    child2 = parent2[crossover_point1:crossover_point2]
-    
-    def fill_child(child, parent):
-        for gene in parent:
-            if gene not in child:
-                child.append(gene)
-        return child
-    
-    child1 = fill_child(child1, parent2 + parent1)
-    child2 = fill_child(child2, parent1 + parent2)
-    
-    return child1, child2
-
-def mutate(chromosome):
-    i, j = random.sample(range(len(chromosome)), 2)
-    chromosome[i], chromosome[j] = chromosome[j], chromosome[i]
+    return 1 / (unique_conns + balance_factor * 0.1)

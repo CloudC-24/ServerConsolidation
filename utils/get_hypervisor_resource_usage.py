@@ -1,9 +1,9 @@
 import time
 
-def get_hypervisor_resource_usage(hypervisor_conn):
+def get_hypervisor_resource_usage(hypervisor_conn,interval=1):
 
     node_info = hypervisor_conn.getInfo()
-    print(node_info)
+    # print(node_info)
     total_memory = node_info[1]  
     total_cpus = node_info[3]  
 
@@ -17,7 +17,7 @@ def get_hypervisor_resource_usage(hypervisor_conn):
     cpu_count = hypervisor_conn.getInfo()[2]
 
     # Wait for the interval (e.g., 1 second)
-    time.sleep(1)
+    # time.sleep(1)
 
     # Get CPU statistics again after the interval
     cpu_stats_2 = hypervisor_conn.getCPUStats(-1, 0)
