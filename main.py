@@ -5,11 +5,14 @@ from algorithms.ffd import ffd_server_consolidation
 from algorithms.ff import ff_server_consolidation
 from algorithms.pabfd import pabfd_server_consolidation
 from algorithms.genetic_algorithm import genetic_algorithm_server_consolidation
+from algorithms.simulated_annealing import sa_server_consolidation
 
 if __name__ == "__main__":
     hypervisor_uris = [
         "qemu:///system",
-        "qemu+ssh://yogi@192.168.35.103/system"
+        "qemu+ssh://yogi@192.168.35.103/system",
+        # "qemu+ssh://adarshsingh@192.168.35.82/system",
+        # "qemu+ssh://prajwalKumar@192.168.35.252/system"
     ]
      
     source_conns = [connect_hypervisor(uri) for uri in hypervisor_uris]
@@ -19,7 +22,7 @@ if __name__ == "__main__":
         all_vms[conn] = vm_list
 
     # migrate_vm(source_conn=source_conns[0],dest_conn=source_conns[1],vm_name="parth@linux2022")
-    migration_plan = genetic_algorithm_server_consolidation(source_conns, all_vms)
+    migration_plan = sa_server_consolidation(source_conns, all_vms)
 
 
     # Execute the migration plan
