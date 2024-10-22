@@ -1,91 +1,157 @@
 import random
 import math
-import libvirt
+from utils.get_hypervisor_resource_usage import get_hypervisor_resource_usage
+from utils.get_vm_resource_usage import get_vm_resource_usage
+import logging
 
-def get_vm_resources(vm):
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+def sa_server_consolidation(source_conns, all_vms, initial_temp=100, cooling_rate=0.95, 
+                          min_temp=1, max_iterations=40):
+    """
+    Combined server consolidation function using simulated annealing.
+    Returns a migration plan for all VMs, including those staying on their current servers.
+    """
+    logger.info("Starting server consolidation process")
+    
     try:
-        stats = vm.getCPUStats(True)
-        cpu_usage = stats[0]['cpu_time'] / 1000000000  # Convert to seconds
-        memory_stats = vm.memoryStats()
-        memory_usage = memory_stats.get('actual', 0) / 1024  # Convert to MB
-        return cpu_usage, memory_usage
-    except libvirt.libvirtError as e:
-        print(f"Error getting resources for VM {vm.name()}: {e}")
-        return 0, 0
+        # Create initial solution and track original locations
+        current_solution = {conn: list(vms) for conn, vms in all_vms.items()}
+        initial_locations = {}
+        for conn, vms in all_vms.items():
+            for vm in vms:
+                initial_locations[vm] = conn
+        
+        logger.info(f"Created initial solution with {len(all_vms)} hypervisors")
+        
+        current_energy = sum(1 for vms in current_solution.values() if vms)
+        best_solution = current_solution.copy()
+        best_energy = current_energy
+        temperature = initial_temp
+        iteration = 0
 
-def get_host_resources(conn):
-    try:
-        node_info = conn.getInfo()
-        cpu_capacity = node_info[2] * node_info[3]  # cores * speed (MHz)
-        memory_capacity = node_info[1]  # in MB
-        return cpu_capacity, memory_capacity
-    except libvirt.libvirtError as e:
-        print(f"Error getting resources for host {conn.getHostname()}: {e}")
-        return 0, 0
+        # Simulated annealing process
+        while temperature > min_temp and iteration < max_iterations:
+            # Generate neighbor solution
+            new_solution = {conn: vms[:] for conn, vms in current_solution.items()}
+            active_conns = [conn for conn, vms in new_solution.items() if vms]
+            
+            if active_conns:
+                source_conn = random.choice(active_conns)
+                if new_solution[source_conn]:
+                    vm = random.choice(new_solution[source_conn])
+                    new_solution[source_conn].remove(vm)
+                    
+                    possible_targets = [
+                        conn for conn in source_conns 
+                        if conn != source_conn and can_host(conn, vm, new_solution)
+                    ]
+                    
+                    if possible_targets:
+                        target_conn = random.choice(possible_targets)
+                        new_solution[target_conn].append(vm)
+                        logger.info(
+                            f"Generated neighbor: Moving VM {vm.name()} from "
+                            f"{source_conn.getHostname()} to {target_conn.getHostname()}"
+                        )
+                    else:
+                        new_solution[source_conn].append(vm)
+                        logger.debug(
+                            f"No suitable target found for VM {vm.name()}, "
+                            f"returning to source {source_conn.getHostname()}"
+                        )
+            
+            # Evaluate new solution
+            neighbor_energy = sum(1 for vms in new_solution.values() if vms)
+            delta_energy = neighbor_energy - current_energy
+            
+            # Accept or reject new solution
+            if (delta_energy < 0 or 
+                random.random() < math.exp(-delta_energy / temperature)):
+                current_solution = new_solution
+                current_energy = neighbor_energy
+                
+                if current_energy < best_energy:
+                    best_solution = current_solution.copy()
+                    best_energy = current_energy
+                    logger.info(
+                        f"New best solution found - Iteration: {iteration}, "
+                        f"Temperature: {temperature:.2f}, Energy: {best_energy}"
+                    )
+            
+            temperature *= cooling_rate
+            iteration += 1
+            
+            logger.debug(
+                f"Iteration {iteration}: Temperature={temperature:.2f}, "
+                f"Current Energy={current_energy}, Best Energy={best_energy}"
+            )
 
-def initial_solution(all_vms):
-    return {conn: list(vms) for conn, vms in all_vms.items()}
-
-def objective_function(solution):
-    return sum(1 for vms in solution.values() if vms)
+        # Create comprehensive migration plan for all VMs
+        migration_plan = {}
+        
+        # First, add all VMs to the migration plan with their current/initial locations
+        for vm, initial_conn in initial_locations.items():
+            migration_plan[vm] = initial_conn
+        
+        # Then update with new locations from the best solution
+        for target_conn, vms in best_solution.items():
+            for vm in vms:
+                migration_plan[vm] = target_conn
+        
+        logger.info(f"Consolidation completed - Migration plan created for {len(migration_plan)} VMs")
+        
+        # Log all VM placements
+        for vm, target_conn in migration_plan.items():
+            if initial_locations[vm] != target_conn:
+                logger.info(
+                    f"VM {vm.name()} will migrate from "
+                    f"{initial_locations[vm].getHostname()} to "
+                    f"{target_conn.getHostname()}"
+                )
+            else:
+                logger.info(
+                    f"VM {vm.name()} will stay on "
+                    f"{target_conn.getHostname()}"
+                )
+        
+        return migration_plan
+    
+    except Exception as e:
+        logger.error(f"Error during server consolidation: {str(e)}")
+        raise
 
 def can_host(conn, vm, solution):
-    host_cpu, host_memory = get_host_resources(conn)
-    vm_cpu, vm_memory = get_vm_resources(vm)
-    
-    current_cpu_usage = sum(get_vm_resources(v)[0] for v in solution[conn])
-    current_memory_usage = sum(get_vm_resources(v)[1] for v in solution[conn])
-    
-    return (host_cpu >= current_cpu_usage + vm_cpu and
-            host_memory >= current_memory_usage + vm_memory)
-
-def generate_neighbor(solution, all_conns):
-    new_solution = {conn: vms[:] for conn, vms in solution.items()}
-    source_conn = random.choice([conn for conn, vms in new_solution.items() if vms])
-    vm = random.choice(new_solution[source_conn])
-    new_solution[source_conn].remove(vm)
-    
-    possible_targets = [conn for conn in all_conns if conn != source_conn and can_host(conn, vm, new_solution)]
-    if possible_targets:
-        target_conn = random.choice(possible_targets)
-        new_solution[target_conn].append(vm)
-    else:
-        new_solution[source_conn].append(vm)
-    
-    return new_solution
-
-def simulated_annealing(all_vms, all_conns, initial_temp=100, cooling_rate=0.95, min_temp=0.1, max_iterations=1000):
-    current_solution = initial_solution(all_vms)
-    current_energy = objective_function(current_solution)
-    best_solution = current_solution
-    best_energy = current_energy
-    temperature = initial_temp
-    iteration = 0
-
-    while temperature > min_temp and iteration < max_iterations:
-        neighbor = generate_neighbor(current_solution, all_conns)
-        neighbor_energy = objective_function(neighbor)
+    """Helper function to check if a hypervisor can host a VM"""
+    try:
+        host_resources = get_hypervisor_resource_usage(conn, 0)
+        host_cpu = host_resources['cpu']
+        host_memory = host_resources['memory']
         
-        if neighbor_energy < current_energy or random.random() < math.exp((current_energy - neighbor_energy) / temperature):
-            current_solution = neighbor
-            current_energy = neighbor_energy
-            
-            if current_energy < best_energy:
-                best_solution = current_solution
-                best_energy = current_energy
+        vm_resources = get_vm_resource_usage(vm, 0)
+        vm_cpu = vm_resources['cpu']
+        vm_memory = vm_resources['memory']
         
-        temperature *= cooling_rate
-        iteration += 1
-
-    return best_solution, best_energy
-
-def sa_server_consolidation(source_conns, all_vms):
-    best_solution, best_energy = simulated_annealing(all_vms, source_conns)
-    
-    migration_plan = {}
-    for target_conn, vms in best_solution.items():
-        for vm in vms:
-            if vm not in all_vms[target_conn]:
-                migration_plan[vm] = target_conn
-    
-    return migration_plan
+        current_cpu_usage = sum(get_vm_resource_usage(v, 0)['cpu'] for v in solution[conn])
+        current_memory_usage = sum(get_vm_resource_usage(v, 0)['memory'] for v in solution[conn])
+        
+        can_host = (host_cpu >= current_cpu_usage + vm_cpu and
+                   host_memory >= current_memory_usage + vm_memory)
+        
+        logger.debug(
+            f"Host check - Hypervisor: {conn.getHostname()} "
+            f"VM: {vm.name()} "
+            f"Result: {can_host} "
+            f"(CPU: {current_cpu_usage + vm_cpu:.1f}/{host_cpu:.1f}%, "
+            f"Mem: {(current_memory_usage + vm_memory)/1024/1024:.1f}/{host_memory/1024/1024:.1f}MB)"
+        )
+        return can_host
+    except Exception as e:
+        logger.error(f"Error checking host capabilities: {str(e)}")
+        return False
