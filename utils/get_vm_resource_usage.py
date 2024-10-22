@@ -1,6 +1,5 @@
 import time
 def get_vm_resource_usage(vm):
-    print(vm.name())
     memory_stats = vm.memoryStats()
     memory_usage = memory_stats.get('rss', 0)  
 
