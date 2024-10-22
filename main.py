@@ -1,5 +1,3 @@
-
-
 from utils.connect import connect_hypervisor
 from utils.migration import migrate_vm
 from algorithms.bfd import bfd_server_consolidation
