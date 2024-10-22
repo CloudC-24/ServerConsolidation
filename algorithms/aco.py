@@ -79,9 +79,16 @@ class ACO:
         return total_wastage + total_power
 
 def aco_server_consolidation(source_conns, all_vms):
-    # Convert libvirt objects to simple VM and Server classes
-    vms = [VM(vm.name(), vm.info()[3], vm.info()[2]) for conn in source_conns for vm in all_vms[conn]]
-    servers = [Server(conn.getHostname(), conn.getCPUStats(total=True)['cpu_time'], conn.getMemoryStats(total=True)['total']) for conn in source_conns]
+    
+    vm_list = [vm for vms in all_vms.values() for vm in vms]
+
+    hypervisor_resources = {
+        conn: get_hypervisor_resource_usage(conn) for conn in source_conns
+    }
+    
+    vms = [VM(vm['name'], get_vm_resource_usage(vm)['cpu'], get_vm_resource_usage(vm)['memory']) for vm in vm_list]
+    servers = [Server(conn.getHostname(), hypervisor_resources[conn]['cpu'], hypervisor_resources[conn]['memory']) for conn in source_conns]
+    
 
     aco = ACO(num_ants=10, num_iterations=100, alpha=1, beta=2, rho=0.1, q0=0.9)
     best_solution = aco.solve(vms, servers)
