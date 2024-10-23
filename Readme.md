@@ -200,4 +200,12 @@ cv-assignment/
 
 ## Contributors
 - [Adarsh Singh]( Ant Colony Optimization (ACO) , First Fit Decreasing Memory (FFDM) )
-- 
+
+# Explanation :
+## ACO : 
+Process Steps:- 
+Initialization: Set initial pheromone levels and parameters.
+Solution Construction: Ants probabilistically assign VMs to servers based on pheromone and server capacity.
+Evaluation: Assess each solution by active servers and resource utilization.
+Pheromone Update: Decrease pheromones on all assignments (evaporation), increase on good assignments (reinforcement).
+Termination: Repeat until convergence or max iterations.
