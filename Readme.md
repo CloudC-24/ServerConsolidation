@@ -200,6 +200,7 @@ cv-assignment/
 
 ## Contributors
 - [Adarsh Singh]( Ant Colony Optimization (ACO) , First Fit Decreasing Memory (FFDM) )
+- [prajwal kumar] (Simulated Annealing (SA), First fit (FA))
 
 # Explanation :
 ## ACO : 
